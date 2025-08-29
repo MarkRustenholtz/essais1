@@ -5,97 +5,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CR Gendarmerie</title>
 <script src="https://unpkg.com/html5-qrcode"></script>
-<style>
-  body { font-family: Arial, sans-serif; margin: 20px; }
-  #qr-reader { width: 300px; margin-bottom: 20px; }
-  table { border-collapse: collapse; width: 400px; }
-  th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-</style>
 </head>
 <body>
 
-<h2>Scan QR Code</h2>
-<div id="qr-reader"></div>
+<!-- Ici ton HTML pour afficher les compteurs -->
+<div>VL: <span id="VL">0</span></div>
+<div>PL: <span id="PL">0</span></div>
+<div>BUS: <span id="BUS">0</span></div>
+<div>TRAIN: <span id="TRAIN">0</span></div>
+<div>CF: <span id="CF">0</span></div>
+<div>CV: <span id="CV">0</span></div>
+<div>TOTAL MOYENS: <span id="TOTAL_MOYENS">0</span></div>
+<div>TOTAL PERSONNES: <span id="TOTAL_PERSONNES">0</span></div>
 
-<h2>Compteurs</h2>
-<table>
-  <tr>
-    <th>Type</th>
-    <th>Compteur</th>
-  </tr>
-  <tr><td>VL</td><td id="vl-count">0</td></tr>
-  <tr><td>PL</td><td id="pl-count">0</td></tr>
-  <tr><td>BUS</td><td id="bus-count">0</td></tr>
-  <tr><td>TRAIN</td><td id="train-count">0</td></tr>
-  <tr><td>Total Moyens</td><td id="total-moyens">0</td></tr>
-  <tr><td>CF</td><td id="cf-count">0</td></tr>
-  <tr><td>CV</td><td id="cv-count">0</td></tr>
-  <tr><td>Total Personnes</td><td id="total-personnes">0</td></tr>
-</table>
+<button onclick="resetData()">Effacer les données</button>
+
+<!-- Conteneur pour le scanner -->
+<div id="qr-reader" style="width:300px"></div>
+
+<!-- Ton script principal -->
+<script>
+// --- COPIE ICI LE SCRIPT COMPLET QUE JE T'AI DONNÉ PLUS HAUT ---
+</script>
 
 <script>
-let scannedCodes = [];
-
-let counters = {
-  VL: 0,
-  PL: 0,
-  BUS: 0,
-  TRAIN: 0,
-  CF: 0,
-  CV: 0
-};
-
-function updateDisplay() {
-  document.getElementById('vl-count').innerText = counters.VL;
-  document.getElementById('pl-count').innerText = counters.PL;
-  document.getElementById('bus-count').innerText = counters.BUS;
-  document.getElementById('train-count').innerText = counters.TRAIN;
-  document.getElementById('cf-count').innerText = counters.CF;
-  document.getElementById('cv-count').innerText = counters.CV;
-
-  document.getElementById('total-moyens').innerText = counters.VL + counters.PL + counters.BUS + counters.TRAIN;
-  document.getElementById('total-personnes').innerText = counters.CF + counters.CV;
-}
-
-function processQRCode(qrCodeMessage) {
-  if (scannedCodes.includes(qrCodeMessage)) {
-    alert("Ce QR code a déjà été scanné !");
-    return;
-  }
-  scannedCodes.push(qrCodeMessage);
-
-  /**
-   * On suppose que le QR code contient une info sous forme :
-   * TypeVehicule:TypeControle
-   * Exemple : "VL:CF" ou "BUS:CV"
-   */
-  const parts = qrCodeMessage.split(':');
-  if(parts.length !== 2) return alert("QR code invalide");
-
-  const vehicle = parts[0].toUpperCase();
-  const controle = parts[1].toUpperCase();
-
-  if(counters.hasOwnProperty(vehicle)) counters[vehicle]++;
-  if(counters.hasOwnProperty(controle)) counters[controle]++;
-
-  updateDisplay();
-}
+// --- Ici tu ajoutes le Html5QrCode pour démarrer le scan ---
+const html5QrCode = new Html5Qrcode("qr-reader");
 
 function startQRScanner() {
-  const html5QrCode = new Html5Qrcode("qr-reader");
   html5QrCode.start(
     { facingMode: "environment" },
     { fps: 10, qrbox: 250 },
-    (decodedText, decodedResult) => {
-      processQRCode(decodedText);
+    qrCodeMessage => {
+      onQRCodeScanned(qrCodeMessage); // Appelle notre fonction de traitement
     },
-    (errorMessage) => {
-      //console.log("Scan error: ", errorMessage);
+    errorMessage => {
+      // console.log(errorMessage); // pour debug si besoin
     }
   );
 }
 
+// Démarrer automatiquement le scanner
 startQRScanner();
 </script>
+
 </body>
 </html>
