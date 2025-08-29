@@ -441,12 +441,15 @@
   <button id="generateBtn" style="background-color:#3498db; color:white; font-weight:bold; padding: 10px 20px; font-size:1.2em;">Générer compte rendu</button>
   <button id="copyBtn" style="background-color:#27ae60; color:white; font-weight:bold; padding: 10px 20px; font-size:1.2em;">Copier dans le presse-papiers</button>
   <button id="resetBtn" class="red" style="font-size:1.2em;">Effacer les données sauvegardées</button>
-  <button id="scanQRBtn">Scanner QR code</button>
-  <div id="qr-reader" style="display:none;"></div>
-
+  <button id="scanQrBtn">📷 Scanner QR Code</button>
+  <button id="stopQrBtn">✖️ Arrêter le scan</button>
+  <div id="qr-reader" style="width: 300px; display: none;"></div>
 </section>
-  <h3>Résumé des ESR</h3>
-  <textarea id="esrSummary" readonly></textarea>
+
+<section>
+<label>Résumé des ESR</label>
+<textarea id="esrSummary" readonly style="width:100%; height:80px; margin-bottom:10px;"></textarea>
+<section>
 
 <section>
   <h2>Compte rendu généré :</h2>
@@ -945,72 +948,184 @@ if ('serviceWorker' in navigator) {
         .then(() => console.log("Service Worker enregistré"))
         .catch(err => console.error("Erreur SW:", err));
      }
-	 // Tableau pour stocker les QR codes scannés
-let scannedNigends = [];
 
-// Fonction pour démarrer le scan QR
-document.getElementById("scanQRBtn").addEventListener("click", () => {
-    document.getElementById("qr-reader").style.display = "block";
-    const html5QrCode = new Html5Qrcode("qr-reader");
-    html5QrCode.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: 250 },
-        qrCodeMessage => {
-            safeProcessQRCode(qrCodeMessage);
-        },
-        errorMessage => {
-            // ignore les erreurs de scan
-        }
-    );
+document.getElementById("scanQrBtn").addEventListener("click", () => {
+    const qrCodeData = prompt("Collez le QR code ici"); // simple prompt pour simuler le scan
+    if (!qrCodeData) return;
+
+    safeProcessQRCode(qrCodeData);
 });
-function processQRCode(qrData) {
-    const match = qrData.match(/CV\s*:\s*(\d+)\s*CF\s*:\s*(\d+)\s*VEH\s*:\s*(\w+)/i);
-    if(match) {
-        const cv = parseInt(match[1]);
-        const cf = parseInt(match[2]);
-        const type = match[3].toLowerCase(); // train, bus, vl, pl
-        if(state.cv[type] !== undefined) state.cv[type] += cv;
-        if(state.cf[type] !== undefined) state.cf[type] += cf;
-        if(state.vehicules[type] !== undefined) state.vehicules[type] += 1;
-        updateUI();
-        debounceSave();
-    }
-}
-// Traitement sécurisé du QR code
+
 function safeProcessQRCode(qrData) {
-    try {
-        // On récupère le NIGEND du QR code
-        const nigendMatch = qrData.match(/NIGEND\s*:\s*(\d+)/);
-        if (!nigendMatch) {
-            alert("QR code invalide : pas de NIGEND trouvé");
-            return;
-        }
-        const nigend = nigendMatch[1];
-
-        // Vérifie si ce NIGEND a déjà été scanné
-        if (scannedNigends.includes(nigend)) {
-            alert("Ce QR code a déjà été scanné !");
-            return;
-        }
-
-        scannedNigends.push(nigend);
-
-        // Affiche le résumé dans le champ « Résumé des ESR »
-        const esrSummary = document.getElementById("esrSummary");
-        esrSummary.value += qrData + "\n\n";
-
-        // Additionne les données du QR code dans le compte rendu
-        processQRCode(qrData);
-
-        alert("QR code scanné avec succès !");
-    } catch (e) {
-        console.error(e);
-        alert("Erreur lors du traitement du QR code");
+    // Vérifier que le QR code contient un NIGEND
+    const nigendMatch = qrData.match(/NIGEND\s*:\s*(\d+)/i);
+    if (!nigendMatch) {
+        alert("QR code invalide : NIGEND non trouvé");
+        return;
     }
+    const nigend = nigendMatch[1];
+
+    if (scannedNigends.includes(nigend)) {
+        alert("Ce QR code a déjà été scanné");
+        return;
+    }
+
+    scannedNigends.push(nigend);
+    processQRCode(qrData); // ta fonction existante qui va transformer les données en tableau
+
+    updateESRSummary();
 }
 
-// Fonction existante : processQRCode(qrData)
-// -> tu n'as pas besoin de la toucher si elle fait déjà l'addition des véhicules/personnes
+function updateESRSummary() {
+    // Additionner les données de tous les QR codes scannés et afficher dans le résumé ESR
+    let totalTrainCV = 0, totalTrainCF = 0;
+    let totalBusCV = 0, totalBusCF = 0;
+    let totalVlCV = 0, totalVlCF = 0;
+    let totalPlCV = 0, totalPlCF = 0;
+
+    scannedNigends.forEach(n => {
+        const data = JSON.parse(localStorage.getItem("crGendarmerie_" + n)); // on stockera chaque QR code séparément
+        if (!data) return;
+
+        totalTrainCV += data.trainCV || 0;
+        totalTrainCF += data.trainCF || 0;
+        totalBusCV += data.busCV || 0;
+        totalBusCF += data.busCF || 0;
+        totalVlCV += data.vlCV || 0;
+        totalVlCF += data.vlCF || 0;
+        totalPlCV += data.plCV || 0;
+        totalPlCF += data.plCF || 0;
+    });
+
+    const totalMoyens = (totalTrainCV+totalTrainCF)+(totalBusCV+totalBusCF)+(totalVlCV+totalVlCF)+(totalPlCV+totalPlCF);
+    const totalPersonnes = totalTrainCV+totalTrainCF+totalBusCV+totalBusCF+totalVlCV+totalVlCF+totalPlCV+totalPlCF;
+
+    document.getElementById("esrSummary").value = 
+`MOYENS / PERSONNES:
+- Train: ${totalTrainCV + totalTrainCF} CV / ${totalTrainCF} CF
+- Bus: ${totalBusCV + totalBusCF} CV / ${totalBusCF} CF
+- Vl: ${totalVlCV + totalVlCF} CV / ${totalVlCF} CF
+- Pl: ${totalPlCV + totalPlCF} CV / ${totalPlCF} CF
+
+TOTAL MOYENS : ${totalMoyens}
+TOTAL PERSONNES : ${totalPersonnes}`;
+}
+    // =======================
+    //   QR CODE INTEGRATION
+    // =======================
+
+    let scannedNigends = []; // Pour éviter les doublons
+
+    // Fonction qui traite le texte du QR
+    function processQrData(qrText) {
+      const lines = qrText.split("\n").map(l => l.trim()).filter(l => l !== "");
+
+      // Vérifier présence du NIGEND
+      const nigendLine = lines.find(l => l.startsWith("NIGEND"));
+      if (!nigendLine) {
+        alert("QR code invalide : NIGEND manquant");
+        return;
+      }
+      const nigend = nigendLine.split(":")[1].trim();
+
+      // Vérifier si déjà scanné
+      if (scannedNigends.includes(nigend)) {
+        alert("QR code déjà scanné !");
+        return;
+      }
+      scannedNigends.push(nigend);
+
+      // Ajouter le texte brut dans Résumé ESR
+      const summaryArea = document.getElementById("esrSummary");
+      summaryArea.value += qrText + "\n\n";
+
+      // Extraire les lignes Train/Bus/VL/PL
+      ["Train","Bus","Vl","Pl"].forEach(type => {
+        const line = lines.find(l => l.startsWith(type));
+        if (line) {
+          const match = line.match(/(\d+)\s*\/\s*(\d+)\s*CV\s*\/\s*(\d+)\s*CF/);
+          if (match) {
+            const veh = parseInt(match[1]);
+            const cv = parseInt(match[2]);
+            const cf = parseInt(match[3]);
+            const key = type.toLowerCase();
+            state.vehicules[key] += veh;
+            state.cv[key] += cv;
+            state.cf[key] += cf;
+          }
+        }
+      });
+
+      updateUI();
+      debounceSave();
+    }
+
+    // Callback quand un QR est scanné
+    function qrCodeSuccessCallback(decodedText, decodedResult) {
+      processQrData(decodedText);
+      html5QrCode.stop().then(() => {
+        document.getElementById("qr-reader").remove();
+      });
+    }
+
+    // Lancer la caméra quand on clique sur "Scanner QR code"
+    document.getElementById("scanQrBtn").addEventListener("click", () => {
+      if (document.getElementById("qr-reader")) return; // éviter doublons
+
+      const qrReader = document.createElement("div");
+      qrReader.id = "qr-reader";
+      qrReader.style.width = "100%";
+      qrReader.style.margin = "10px auto";
+      document.body.insertBefore(qrReader, document.getElementById("compteRendu"));
+
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      const config = { fps: 10, qrbox: 250, facingMode: "environment" };
+
+      html5QrCode.start(
+        { facingMode: "environment" },
+        config,
+        qrCodeSuccessCallback
+      ).catch(err => {
+        alert("Impossible d'accéder à la caméra : " + err);
+      });
+    });
+let html5QrCode; // variable globale pour le scanner
+
+document.getElementById("scanQrBtn").addEventListener("click", () => {
+  startQRScanner();
+});
+
+document.getElementById("stopQrBtn").addEventListener("click", () => {
+  stopQRScanner();
+});
+
+function startQRScanner() {
+  document.getElementById("qr-reader").style.display = "block";
+  html5QrCode = new Html5Qrcode("qr-reader");
+  html5QrCode.start(
+    { facingMode: "environment" },  // caméra arrière par défaut
+    { fps: 10, qrbox: 250 },
+    (decodedText) => {
+      safeProcessQRCode(decodedText); 
+      // ⚠️ on ne coupe pas le scanner automatiquement ici
+      // tu peux donc scanner plusieurs QR à la suite
+    }
+  ).catch(err => {
+    console.error("Erreur démarrage scanner:", err);
+  });
+}
+
+function stopQRScanner() {
+  if (html5QrCode) {
+    html5QrCode.stop().then(() => {
+      console.log("Scanner arrêté");
+      document.getElementById("qr-reader").style.display = "none";
+    }).catch(err => {
+      console.error("Erreur arrêt scanner:", err);
+    });
+  }
+}
+
 
     // Initialiser la page
     init();
