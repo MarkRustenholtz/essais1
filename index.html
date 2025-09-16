@@ -6,15 +6,38 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     body { font-family: Arial, sans-serif; margin: 10px; }
-    video { width: 100%; max-height: 40vh; margin-bottom: 10px; border: 1px solid #ccc; }
+    video { width: 100%; max-height: 40vh; margin-bottom: 10px; border: 1px solid #ccc; position: relative; }
     textarea { width: 100%; height: 150px; margin-top: 10px; font-family: monospace; }
     button { padding: 10px 15px; font-size: 16px; margin: 5px; cursor: pointer; }
+
+    /* Cadre plaque */
+    #overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 70%;
+      height: 20%;
+      transform: translate(-50%, -50%);
+      border: 3px solid red;
+      border-radius: 8px;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+
+    .video-container {
+      position: relative;
+      display: inline-block;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
 
   <h2>Scanner une plaque</h2>
-  <video id="video" autoplay playsinline></video>
+  <div class="video-container">
+    <video id="video" autoplay playsinline></video>
+    <div id="overlay"></div>
+  </div>
   <canvas id="canvas" style="display:none;"></canvas>
   <br>
   <button id="captureBtn">📸 Prendre photo</button>
@@ -54,26 +77,40 @@
       localStorage.setItem("plaquesLog", log.value);
     }
 
+    // OCR optimisé en noir et blanc
+    function preprocessCanvas(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+        const val = avg > 128 ? 255 : 0;
+        imgData.data[i] = imgData.data[i+1] = imgData.data[i+2] = val;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
     // Quand on clique sur "Prendre photo"
     captureBtn.addEventListener("click", async () => {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0);
+
+      preprocessCanvas(ctx, canvas.width, canvas.height);
 
       try {
-        const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+        const { data: { text } } = await Tesseract.recognize(canvas, 'eng+fra');
         const cleaned = text.replace(/\s+/g, "").toUpperCase();
 
-        // Regex simple pour plaque (adapter au pays si besoin)
-        const plateRegex = /[A-Z0-9]{4,9}/;
-        const match = plateRegex.exec(cleaned);
+        // Regex plaques françaises
+        const regexNouveau = /[A-Z]{2}\d{3}[A-Z]{2}/;          // Ex: AB123CD
+        const regexAncien  = /\d{1,4}[ ]?[A-Z]{2,3}[ ]?\d{2}/; // Ex: 123AAA06 ou 123 AAA 06
+        let match = regexNouveau.exec(cleaned) || regexAncien.exec(cleaned);
 
         if (match) {
-          const plaque = match[0];
+          const plaque = match[0].replace(/\s+/g, ""); // supprime espaces internes
           const heure = getCurrentTime();
 
-          // Ajouter dans la zone mission
-          log.value += `${heure} - ${plaque}\n`;
+          log.value += `[${heure}] → ${plaque}\n`;
           saveLog();
         } else {
           alert("❌ Aucune plaque détectée, réessaie.");
