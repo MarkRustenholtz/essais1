@@ -52,6 +52,7 @@
     const log = document.getElementById("missionLog");
     const captureBtn = document.getElementById("captureBtn");
     const clearBtn = document.getElementById("clearBtn");
+    const overlay = document.getElementById("overlay");
 
     // Charger l'historique au démarrage
     window.addEventListener("load", () => {
@@ -90,10 +91,21 @@
 
     // Quand on clique sur "Prendre photo"
     captureBtn.addEventListener("click", async () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Taille de la vidéo
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+
+      // Dimensions du cadre (en pourcentage)
+      const ow = 0.7 * vw;   // 70% largeur
+      const oh = 0.2 * vh;   // 20% hauteur
+      const ox = (vw - ow) / 2;
+      const oy = (vh - oh) / 2;
+
+      // Canvas uniquement sur la zone du cadre
+      canvas.width = ow;
+      canvas.height = oh;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0);
+      ctx.drawImage(video, ox, oy, ow, oh, 0, 0, ow, oh);
 
       preprocessCanvas(ctx, canvas.width, canvas.height);
 
