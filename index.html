@@ -1,95 +1,173 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Lecture Plaques</title>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 10px; }
-    video { width: 100%; max-height: 40vh; margin-bottom: 10px; border: 1px solid #ccc; }
-    textarea { width: 100%; height: 150px; margin-top: 10px; font-family: monospace; }
-    button { padding: 10px 15px; font-size: 16px; margin: 5px; cursor: pointer; }
-  </style>
+<meta charset="utf-8" />
+<title>Scanner Plaques (FR)</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 10px; }
+  video { width: 100%; max-height: 40vh; border: 1px solid #ccc; }
+  textarea { width: 100%; height: 160px; margin-top:10px; font-family: monospace; }
+  button { padding: 8px 12px; margin: 6px; font-size: 15px; }
+  #status { margin:8px 0; color: #555; }
+</style>
 </head>
 <body>
-
-  <h2>Scanner une plaque</h2>
+  <h2>Scanner une plaque (FR)</h2>
+  <div id="status">Initialisation...</div>
   <video id="video" autoplay playsinline></video>
   <canvas id="canvas" style="display:none;"></canvas>
   <br>
-  <button id="captureBtn">📸 Prendre photo</button>
+  <button id="captureBtn" disabled>📸 Prendre photo</button>
   <button id="clearBtn">🗑️ Effacer</button>
 
   <h3>Déroulement de la mission</h3>
   <textarea id="missionLog" placeholder="Les plaques reconnues s'afficheront ici..."></textarea>
 
-  <script>
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const log = document.getElementById("missionLog");
-    const captureBtn = document.getElementById("captureBtn");
-    const clearBtn = document.getElementById("clearBtn");
+<script>
+(async () => {
+  const status = document.getElementById('status');
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const captureBtn = document.getElementById('captureBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const log = document.getElementById('missionLog');
 
-    // Charger l'historique au démarrage
-    window.addEventListener("load", () => {
-      const saved = localStorage.getItem("plaquesLog");
-      if (saved) {
-        log.value = saved;
+  // Charger l'historique
+  const SAVED_KEY = 'plaquesLog';
+  if (localStorage.getItem(SAVED_KEY)) log.value = localStorage.getItem(SAVED_KEY);
+
+  // Init Tesseract worker (chargé une fois)
+  status.textContent = 'Chargement du moteur OCR (Tesseract)...';
+  const worker = Tesseract.createWorker({
+    logger: m => console.log('TESS:', m) // utile pour debug
+  });
+  try {
+    await worker.load();
+    await worker.loadLanguage('eng');            // anglais suffit pour lettres+chiffres
+    await worker.initialize('eng');
+    // limiter les caractères reconnus (lettres, chiffres et tiret)
+    await worker.setParameters({
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+    });
+  } catch (e) {
+    console.error('Erreur initialisation Tesseract', e);
+    status.textContent = 'Erreur initialisation OCR : ' + (e.message || e);
+    return;
+  }
+
+  // Init caméra
+  async function startCamera() {
+    status.textContent = 'Demande d’accès caméra...';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream;
+      await video.play();
+      status.textContent = 'Prêt. Appuie sur "Prendre photo".';
+      captureBtn.disabled = false;
+    } catch (err) {
+      console.error('Erreur getUserMedia:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'SecurityError') {
+        status.textContent = 'Accès caméra refusé : autorise la caméra pour ce site.';
+      } else if (err.name === 'NotFoundError') {
+        status.textContent = 'Aucune caméra trouvée sur cet appareil.';
+      } else {
+        status.textContent = 'Erreur accès caméra : ' + (err.message || err);
       }
-    });
-
-    // Activer la caméra arrière
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(stream => { video.srcObject = stream; })
-      .catch(err => alert("Erreur caméra: " + err));
-
-    // Obtenir uniquement l'heure (HH:MM:SS)
-    function getCurrentTime() {
-      const now = new Date();
-      return now.toLocaleTimeString("fr-FR", { hour12: false });
+      captureBtn.disabled = true;
     }
+  }
 
-    // Sauvegarder la zone dans localStorage
-    function saveLog() {
-      localStorage.setItem("plaquesLog", log.value);
+  // Démarre
+  await startCamera();
+
+  // utilitaires regex FR (tolérant tiret/espaces)
+  const regexSIV = /^[A-Z]{2}-?[0-9]{3}-?[A-Z]{2}$/;  // AA-123-AA ou AA123AA
+  const regexFNI = /^[0-9]{1,4}[A-Z]{1,3}[0-9]{2}$/;   // 1234AB75 ou 1234 AB 75 (après nettoyage)
+
+  function normalizeOCR(text) {
+    // garder lettres, chiffres et tiret ; supprimer espaces et autres signes
+    let s = (text || '').toUpperCase();
+    s = s.replace(/\s+/g, '');            // enlever espaces
+    s = s.replace(/[^A-Z0-9-]/g, '');     // garder A-Z,0-9 et -
+    // supprimer tirets en début/fin éventuels
+    s = s.replace(/^-+|-+$/g, '');
+    return s;
+  }
+
+  function formatSIV(s) {
+    // si déjà avec tirets OK, sinon formatter AA123AA -> AA-123-AA
+    const withDash = s.includes('-');
+    if (withDash) return s;
+    if (s.length === 7) {
+      // AA123AA -> positions 0-1, 2-4, 5-6
+      return s.slice(0,2) + '-' + s.slice(2,5) + '-' + s.slice(5);
     }
+    return s; // fallback
+  }
 
-    // Quand on clique sur "Prendre photo"
-    captureBtn.addEventListener("click", async () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
+  function getCurrentTime() {
+    return new Date().toLocaleTimeString('fr-FR', { hour12: false });
+  }
 
-      try {
-        const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
-        const cleaned = text.replace(/\s+/g, "").toUpperCase();
+  async function doRecognize() {
+    captureBtn.disabled = true;
+    status.textContent = 'Analyse OCR en cours...';
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Regex plaques FR : nouveau format (AA-123-AA) ou ancien format (1234AB67)
-const plateRegex = /([A-Z]{2}-[0-9]{3}-[A-Z]{2})|([0-9]{1,4}[A-Z]{1,3}[0-9]{2})/;
+    try {
+      const { data: { text } } = await worker.recognize(canvas);
+      console.log('OCR raw:', text);
+      let norm = normalizeOCR(text);
 
-        const match = plateRegex.exec(cleaned);
+      // parfois l'OCR colle des tirets ou confond O/0 — petit nettoyage possible
+      // norm = norm.replace(/O(?=\d)|(?<=\d)O/g, '0'); // (optionnel)
 
-        if (match) {
-          const plaque = match[0];
-          const heure = getCurrentTime();
-
-          // Ajouter dans la zone mission
-          log.value += `${heure} - ${plaque}\n`;
-          saveLog();
-        } else {
-          alert("❌ Aucune plaque détectée, réessaie.");
-        }
-      } catch (e) {
-        console.error("Erreur OCR:", e);
-        alert("⚠️ Erreur de reconnaissance.");
+      let matched = null;
+      // tester SIV (AA-123-AA)
+      if (regexSIV.test(norm)) {
+        matched = formatSIV(norm);
+      } else {
+        // tester FNI
+        const normNoDash = norm.replace(/-/g, '');
+        if (regexFNI.test(normNoDash)) matched = normNoDash;
       }
-    });
 
-    // Effacer zone + mémoire
-    clearBtn.addEventListener("click", () => {
-      log.value = "";
-      localStorage.removeItem("plaquesLog");
-    });
-  </script>
+      if (matched) {
+        const heure = getCurrentTime();
+        log.value += `${heure} - ${matched}\n`;
+        localStorage.setItem(SAVED_KEY, log.value);
+        status.textContent = 'Plaque détectée et enregistrée : ' + matched;
+      } else {
+        status.textContent = 'Aucune plaque FR valide détectée. Texte OCR = ' + (norm || '[vide]');
+        alert('Aucune plaque FR valide détectée. Réessaie en cadrant mieux la plaque.');
+      }
+    } catch (e) {
+      console.error('Erreur OCR:', e);
+      status.textContent = 'Erreur OCR : ' + (e.message || e);
+      alert('Erreur de reconnaissance, voir console pour détails.');
+    } finally {
+      captureBtn.disabled = false;
+    }
+  }
+
+  captureBtn.addEventListener('click', doRecognize);
+
+  // Effacer
+  clearBtn.addEventListener('click', () => {
+    if (confirm('Effacer le déroulement de mission et l’historique local ?')) {
+      log.value = '';
+      localStorage.removeItem(SAVED_KEY);
+      status.textContent = 'Historique effacé.';
+    }
+  });
+
+  // Tout prêt
+  status.textContent = 'Prêt. Appuie sur "Prendre photo".';
+})();
+</script>
 </body>
 </html>
