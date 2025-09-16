@@ -1,57 +1,94 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Test OCR Plaque</title>
+  <title>Lecture Plaques</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 10px; }
+    video { width: 100%; max-height: 40vh; margin-bottom: 10px; border: 1px solid #ccc; }
+    textarea { width: 100%; height: 150px; margin-top: 10px; font-family: monospace; }
+    button { padding: 10px 15px; font-size: 16px; margin: 5px; cursor: pointer; }
+  </style>
 </head>
 <body>
-  <h2>OCR Plaques</h2>
-  <video id="video" autoplay playsinline width="320" height="240" style="border:1px solid #333"></video><br>
-  <button id="captureBtn">📸 Scanner</button>
-  <pre id="output"></pre>
+
+  <h2>Scanner une plaque</h2>
+  <video id="video" autoplay playsinline></video>
   <canvas id="canvas" style="display:none;"></canvas>
+  <br>
+  <button id="captureBtn">📸 Prendre photo</button>
+  <button id="clearBtn">🗑️ Effacer</button>
 
-<script>
-(async () => {
-  const video = document.getElementById("video");
-  const canvas = document.getElementById("canvas");
-  const output = document.getElementById("output");
+  <h3>Déroulement de la mission</h3>
+  <textarea id="missionLog" placeholder="Les plaques reconnues s'afficheront ici..."></textarea>
 
-  // accès caméra
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = stream;
-  } catch(e) {
-    output.textContent = "Erreur accès caméra : " + e.message;
-    return;
-  }
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const log = document.getElementById("missionLog");
+    const captureBtn = document.getElementById("captureBtn");
+    const clearBtn = document.getElementById("clearBtn");
 
-  // init worker
-  const worker = await Tesseract.createWorker("eng");
+    // Charger l'historique au démarrage
+    window.addEventListener("load", () => {
+      const saved = localStorage.getItem("plaquesLog");
+      if (saved) {
+        log.value = saved;
+      }
+    });
 
-  document.getElementById("captureBtn").addEventListener("click", async () => {
-    // capture image
-    if (video.videoWidth === 0) {
-      output.textContent = "⚠️ Vidéo non prête.";
-      return;
+    // Activer la caméra arrière
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => alert("Erreur caméra: " + err));
+
+    // Obtenir uniquement l'heure (HH:MM:SS)
+    function getCurrentTime() {
+      const now = new Date();
+      return now.toLocaleTimeString("fr-FR", { hour12: false });
     }
-    canvas.width = 640; // réduction pour éviter crash mobile
-    canvas.height = 480;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    output.textContent = "🔎 Analyse en cours...";
-
-    try {
-      const { data: { text } } = await worker.recognize(canvas);
-      output.textContent = "Résultat brut OCR:\n" + text;
-    } catch(err) {
-      output.textContent = "❌ Erreur OCR : " + err.message;
+    // Sauvegarder la zone dans localStorage
+    function saveLog() {
+      localStorage.setItem("plaquesLog", log.value);
     }
-  });
-})();
-</script>
+
+    // Quand on clique sur "Prendre photo"
+    captureBtn.addEventListener("click", async () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext("2d").drawImage(video, 0, 0);
+
+      try {
+        const { data: { text } } = await Tesseract.recognize(canvas, 'eng');
+        const cleaned = text.replace(/\s+/g, "").toUpperCase();
+
+        // Regex simple pour plaque (adapter au pays si besoin)
+        const plateRegex = /[A-Z0-9]{4,9}/;
+        const match = plateRegex.exec(cleaned);
+
+        if (match) {
+          const plaque = match[0];
+          const heure = getCurrentTime();
+
+          // Ajouter dans la zone mission
+          log.value += `${heure} - ${plaque}\n`;
+          saveLog();
+        } else {
+          alert("❌ Aucune plaque détectée, réessaie.");
+        }
+      } catch (e) {
+        console.error("Erreur OCR:", e);
+        alert("⚠️ Erreur de reconnaissance.");
+      }
+    });
+
+    // Effacer zone + mémoire
+    clearBtn.addEventListener("click", () => {
+      log.value = "";
+      localStorage.removeItem("plaquesLog");
+    });
+  </script>
 </body>
 </html>
